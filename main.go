@@ -17,10 +17,14 @@ var tracer trace.Tracer
 
 func newExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
 	// Your preferred exporter: console, jaeger, zipkin, OTLP, etc.
-	return stdouttrace.New(
+	exporter, err := stdouttrace.New(
 		stdouttrace.WithPrettyPrint(),
 		stdouttrace.WithWriter(os.Stderr),
-	), nil
+	)
+	if err != nil {
+		return nil, err
+	}
+	return exporter, nil
 }
 
 func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
@@ -61,4 +65,8 @@ func main() {
 
 	// Finally, set the tracer that can be used for this package.
 	tracer = tp.Tracer("ExampleService")
+
+	var span trace.Span
+	ctx, span = tracer.Start(ctx, "main")
+	defer span.End()
 }
