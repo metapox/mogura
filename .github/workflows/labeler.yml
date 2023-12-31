@@ -9,7 +9,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4 # Uploads repository content to the runner
         with:
-          repository: ${{ github.repository }}
+          repository: metapox/mogura
       - uses: actions/labeler@v5
         with:
           configuration-path: .github/labeler.yml
