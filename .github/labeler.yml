@@ -1,5 +1,5 @@
 test:
-- any:
+- all:
   - changed-files:
     - all-globs-to-any-file:
       - 'README.md'
