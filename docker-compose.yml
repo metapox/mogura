@@ -1,0 +1,10 @@
+version: '3'
+services:
+  golang:
+    image: golang  # Golangの最新バージョンを使用
+    volumes:
+      - .:/opt/mogura  # プロジェクトルートをマウント
+    stdin_open: true
+    tty: true
+    cap_add:
+     - SYS_PTRACE

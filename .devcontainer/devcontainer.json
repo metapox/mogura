@@ -1,0 +1,13 @@
+{
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "golang",
+  "workspaceFolder": "/opt/${localWorkspaceFolderBasename}",
+  "customizations": {
+		"vscode": {
+			"extensions": [
+				"GitHub.copilot",
+				"golang.go"
+			]
+		}
+	}
+}
