@@ -3,48 +3,74 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
-	"flag"
 	"syscall"
 	"time"
 )
 
 func main() {
-	pid := flag.Int("p", -1, "pid")
-	flag.Parse()
+	// pid := flag.Int("p", -1, "pid")
+	// flag.Parse()
 
-	// cmd := exec.Command("./test/test.sh")
-	// err := cmd.Start()
+	cmd := exec.Command("./test/test.sh")
+	err := cmd.Start()
 
-	// if err != nil {
-	// 	panic(err)
-	// }
+	if err != nil {
+		panic(err)
+	}
+	pid := &cmd.Process.Pid
 
 	if *pid == -1 {
 		panic("pid is required")
 	}
-	err := syscall.PtraceAttach(*pid)
+	err = syscall.PtraceAttach(*pid)
 	if err != nil {
 		panic(err)
 	}
+	syscall.PtraceSetOptions(*pid, syscall.PTRACE_O_TRACESYSGOOD|syscall.PTRACE_O_TRACEEXEC|syscall.PTRACE_O_TRACECLONE|syscall.PTRACE_O_TRACEFORK|syscall.PTRACE_O_TRACEVFORK|syscall.PTRACE_O_TRACEEXEC)
 
-	var ws syscall.WaitStatus
-	_, err = syscall.Wait4(*pid, &ws, 0, nil)
-	if err != nil {
-		panic(err)
-	}
+	watchProcess(*pid)
+}
 
+func watchProcess(pid int) {
+	fmt.Println("Watching process", pid)
 	startTime := time.Now()
-	err = syscall.PtraceCont(*pid, 0)
 
-	if _, err = syscall.Wait4(*pid, &ws, 0, nil); err != nil {
-		fmt.Println("Error waiting for the process to exit:", err)
-		os.Exit(1)
+	for {
+		var ws syscall.WaitStatus
+		_, err := syscall.Wait4(pid, &ws, 0, nil)
+
+		if err != nil {
+			fmt.Println("Error waiting for the process to exit:", err)
+			os.Exit(1)
+		}
+
+		if ws.Exited() {
+			break
+		} else if ws.Stopped() && ws.StopSignal() == syscall.SIGTRAP {
+			if ws.TrapCause() != 0 {
+				npid, err := syscall.PtraceGetEventMsg(pid)
+				if err != nil {
+					fmt.Println("Error getting event message:", err)
+					os.Exit(1)
+				}
+				fmt.Println("New process created:", npid)
+			}
+		}
+
+		// } else if ws.StopSignal() == syscall.SIGTRAP|0x80 {
+		// 	fmt.Println("Process TrapCause:", ws.TrapCause())
+		// 	time.Sleep(5 * time.Second)
+		// }
+
+		// fmt.Println("Process stopped. Signal:", ws.StopSignal())
+
+		syscall.PtraceCont(pid, 0)
 	}
 
-	// Record end time and calculate execution time
 	endTime := time.Now()
 	executionTime := endTime.Sub(startTime)
 
-	fmt.Printf("Child process exited. Execution time: %v\n", executionTime)
+	fmt.Printf("pid %v exited. Execution time: %v\n", pid, executionTime)
 }
