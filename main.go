@@ -1,72 +1,76 @@
 package main
 
 import (
-	"context"
-	"log"
+	"fmt"
 	"os"
+	"os/exec"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
-	"go.opentelemetry.io/otel/trace"
+	"syscall"
+	"time"
 )
 
-var tracer trace.Tracer
+func main() {
+	// pid := flag.Int("p", -1, "pid")
+	// flag.Parse()
 
-func newExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
-	// Your preferred exporter: console, jaeger, zipkin, OTLP, etc.
-	exporter, err := stdouttrace.New(
-		stdouttrace.WithPrettyPrint(),
-		stdouttrace.WithWriter(os.Stderr),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return exporter, nil
-}
-
-func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
-	// Ensure default SDK resources and the required service name are set.
-	r, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName("ExampleService"),
-		),
-	)
+	cmd := exec.Command("./test/test.sh")
+	err := cmd.Start()
 
 	if err != nil {
 		panic(err)
 	}
+	pid := &cmd.Process.Pid
 
-	return sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exp),
-		sdktrace.WithResource(r),
-	)
+	if *pid == -1 {
+		panic("pid is required")
+	}
+	err = syscall.PtraceAttach(*pid)
+	if err != nil {
+		panic(err)
+	}
+	syscall.PtraceSetOptions(*pid, syscall.PTRACE_O_TRACESYSGOOD|syscall.PTRACE_O_TRACEEXEC|syscall.PTRACE_O_TRACECLONE|syscall.PTRACE_O_TRACEFORK|syscall.PTRACE_O_TRACEVFORK|syscall.PTRACE_O_TRACEEXEC)
+
+	watchProcess(*pid)
 }
 
-func main() {
-	ctx := context.Background()
+func watchProcess(pid int) {
+	fmt.Println("Watching process", pid)
+	startTime := time.Now()
 
-	exp, err := newExporter(ctx)
-	if err != nil {
-		log.Fatalf("failed to initialize exporter: %v", err)
+	for {
+		var ws syscall.WaitStatus
+		_, err := syscall.Wait4(pid, &ws, 0, nil)
+
+		if err != nil {
+			fmt.Println("Error waiting for the process to exit:", err)
+			os.Exit(1)
+		}
+
+		if ws.Exited() {
+			break
+		} else if ws.Stopped() && ws.StopSignal() == syscall.SIGTRAP {
+			if ws.TrapCause() != 0 {
+				npid, err := syscall.PtraceGetEventMsg(pid)
+				if err != nil {
+					fmt.Println("Error getting event message:", err)
+					os.Exit(1)
+				}
+				fmt.Println("New process created:", npid)
+			}
+		}
+
+		// } else if ws.StopSignal() == syscall.SIGTRAP|0x80 {
+		// 	fmt.Println("Process TrapCause:", ws.TrapCause())
+		// 	time.Sleep(5 * time.Second)
+		// }
+
+		// fmt.Println("Process stopped. Signal:", ws.StopSignal())
+
+		syscall.PtraceCont(pid, 0)
 	}
 
-	// Create a new tracer provider with a batch span processor and the given exporter.
-	tp := newTraceProvider(exp)
+	endTime := time.Now()
+	executionTime := endTime.Sub(startTime)
 
-	// Handle shutdown properly so nothing leaks.
-	defer func() { _ = tp.Shutdown(ctx) }()
-
-	otel.SetTracerProvider(tp)
-
-	// Finally, set the tracer that can be used for this package.
-	tracer = tp.Tracer("ExampleService")
-
-	var span trace.Span
-	ctx, span = tracer.Start(ctx, "main")
-	defer span.End()
+	fmt.Printf("pid %v exited. Execution time: %v\n", pid, executionTime)
 }
