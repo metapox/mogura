@@ -8,25 +8,26 @@
 #include <thread>
 #include <cstdlib>
 #include <map>
+#include <ctime>
 
 struct pidctl {
-  pid_t pid;
+  long pid;
   // top level process of parent id is -1
   pid_t parent_pid;
-  std::chrono::steady_clock::time_point start_time;
-  std::chrono::steady_clock::time_point end_time;
+  std::time_t start_time;
+  std::time_t end_time;
   long syscall_count;
 
   void start() {
-    start_time = std::chrono::steady_clock::now();
+    start_time = std::time(nullptr);
   }
 
   void end() {
-    end_time = std::chrono::steady_clock::now();
+    end_time = std::time(nullptr);
   }
 
-  std::chrono::duration<int64_t, std::nano> duration() {
-    return end_time - start_time;
+  double duration() {
+    return difftime(end_time, start_time);
   }
 
   long increatement_syscall_count() {
@@ -38,7 +39,7 @@ std::map <pid_t, pidctl> pid_map;
 void print_pidctl() {
   for(auto itr = pid_map.begin(); itr != pid_map.end(); ++itr) {
     pidctl pidctl = itr->second;
-    printf("pid=%d, parent=%d, duration=%ld\n", pidctl.pid, pidctl.parent_pid, pidctl.duration().count());
+    printf("pid=%d, parent=%d, duration=%ld\n", pidctl.pid, pidctl.parent_pid, pidctl.duration());
   }
 }
 
@@ -51,7 +52,7 @@ int main(int argc, char *argv[])
     exit(1);
   }
 
-  pid_t top_process = fork();
+  long top_process = fork();
   if (top_process == 0) {
     execvp(argv[1], argv + 1);
     perror("failed to exec");
@@ -87,7 +88,7 @@ int main(int argc, char *argv[])
       printf("terminated by signal %d\n", WTERMSIG(status));
     } else if (WIFSTOPPED(status)) {
       int event = (status >> 8);
-      pid_t npid;
+      long npid;
       if(event == (SIGTRAP | PTRACE_EVENT_VFORK << 8) ||
          event == (SIGTRAP | PTRACE_EVENT_FORK << 8) ||
          event == (SIGTRAP | PTRACE_EVENT_CLONE << 8)
@@ -106,7 +107,9 @@ int main(int argc, char *argv[])
       }
     }
 
-    ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+    if (ptrace(PTRACE_SYSCALL, pid, NULL, NULL) < 0) {
+      perror("failed to syscall");
+    }
   }
 
   print_pidctl();
