@@ -7,6 +7,8 @@ import (
 
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func main() {
@@ -28,8 +30,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	syscall.PtraceSetOptions(*pid, syscall.PTRACE_O_TRACESYSGOOD|syscall.PTRACE_O_TRACEEXEC|syscall.PTRACE_O_TRACECLONE|syscall.PTRACE_O_TRACEFORK|syscall.PTRACE_O_TRACEVFORK|syscall.PTRACE_O_TRACEEXEC)
 
+	sig := unix.Siginfo{}
+	unix.Waitid(unix.P_PID, *pid, &sig, 0, nil)
+	err = syscall.PtraceSetOptions(*pid, syscall.PTRACE_O_TRACESYSGOOD|syscall.PTRACE_O_TRACEEXEC|syscall.PTRACE_O_TRACECLONE|syscall.PTRACE_O_TRACEFORK|syscall.PTRACE_O_TRACEVFORK|syscall.PTRACE_O_TRACEEXEC)
+	if err != nil {
+		panic(err)
+	}
+	syscall.PtraceCont(*pid, 0)
 	watchProcess(*pid)
 }
 
@@ -38,8 +46,8 @@ func watchProcess(pid int) {
 	startTime := time.Now()
 
 	for {
-		var ws syscall.WaitStatus
-		_, err := syscall.Wait4(pid, &ws, 0, nil)
+		var sig unix.Siginfo
+		npid, err := unix.Waitid(unix.P_PID, pid, &sig, 0, nil)
 
 		if err != nil {
 			fmt.Println("Error waiting for the process to exit:", err)
